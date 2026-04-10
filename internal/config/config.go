@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -8,19 +8,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config is the on-disk configuration for the xgate daemon.
 type Config struct {
 	Listen      string  `yaml:"listen"`
 	ManageHosts bool    `yaml:"manage_hosts"`
 	Routes      []Route `yaml:"routes"`
 }
 
+// Route maps an inbound Host header (possibly wildcarded with a leading "*.")
+// to an upstream URL.
 type Route struct {
 	Host   string `yaml:"host"`
 	Target string `yaml:"target"`
 }
 
-// loadConfig reads and parses a YAML config file, applying defaults.
-func loadConfig(path string) (*Config, error) {
+// Load reads and parses a YAML config file, applying defaults.
+func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
@@ -35,10 +38,10 @@ func loadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// writeConfig marshals cfg to YAML and writes it atomically to path.
+// Write marshals cfg to YAML and writes it atomically to path.
 // Atomic = write to a tempfile in the same directory, then rename over the
 // final path. On POSIX this is an atomic replace on the same filesystem.
-func writeConfig(path string, cfg *Config) error {
+func Write(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -73,9 +76,9 @@ func writeConfig(path string, cfg *Config) error {
 	return nil
 }
 
-// ensureConfig makes sure a config file exists at path. If it does not, the
+// Ensure makes sure a config file exists at path. If it does not, the
 // parent directory is created and a default config is written.
-func ensureConfig(path string) error {
+func Ensure(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
@@ -91,5 +94,5 @@ func ensureConfig(path string) error {
 		ManageHosts: true,
 		Routes:      []Route{},
 	}
-	return writeConfig(path, def)
+	return Write(path, def)
 }

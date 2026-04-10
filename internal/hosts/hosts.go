@@ -1,10 +1,12 @@
-package main
+package hosts
 
 import (
 	"fmt"
 	"log"
 	"os"
 	"strings"
+
+	"xgate/internal/config"
 )
 
 const (
@@ -13,7 +15,10 @@ const (
 	markerEnd   = "# local-router:end"
 )
 
-func addHostsEntries(routes []Route) error {
+// Add rewrites the managed block in /etc/hosts to contain one entry per
+// non-wildcard route. Wildcard routes are skipped — they require a
+// real DNS resolver.
+func Add(routes []config.Route) error {
 	var hosts []string
 	for _, r := range routes {
 		if !strings.HasPrefix(r.Host, "*.") {
@@ -48,7 +53,8 @@ func addHostsEntries(routes []Route) error {
 	return nil
 }
 
-func removeHostsEntries() error {
+// Remove strips the managed block from /etc/hosts, if present.
+func Remove() error {
 	content, err := os.ReadFile(hostsFile)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", hostsFile, err)

@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"log"
 	"net"
 	"os"
+
+	"xgate/internal/admin"
+	"xgate/internal/config"
 )
 
 // Request is the wire format for one CLI → daemon call.
@@ -19,15 +22,15 @@ type Request struct {
 
 // Response is the wire format for one daemon → CLI reply.
 type Response struct {
-	OK     bool    `json:"ok"`
-	Error  string  `json:"error,omitempty"`
-	Routes []Route `json:"routes,omitempty"`
+	OK     bool           `json:"ok"`
+	Error  string         `json:"error,omitempty"`
+	Routes []config.Route `json:"routes,omitempty"`
 }
 
-// ServeSocket listens on a Unix socket at path and handles one request per
+// Serve listens on a Unix socket at path and handles one request per
 // connection. It blocks until ctx is canceled, then closes the listener and
 // removes the socket file.
-func ServeSocket(ctx context.Context, path string, admin *AdminServer) error {
+func Serve(ctx context.Context, path string, adminSrv *admin.Server) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove stale socket: %w", err)
 	}
@@ -59,11 +62,11 @@ func ServeSocket(ctx context.Context, path string, admin *AdminServer) error {
 			log.Printf("socket accept: %v", err)
 			continue
 		}
-		go handleSocketConn(conn, admin)
+		go handleConn(conn, adminSrv)
 	}
 }
 
-func handleSocketConn(conn net.Conn, admin *AdminServer) {
+func handleConn(conn net.Conn, adminSrv *admin.Server) {
 	defer conn.Close()
 
 	var req Request
@@ -73,28 +76,28 @@ func handleSocketConn(conn net.Conn, admin *AdminServer) {
 		return
 	}
 
-	resp := dispatchCommand(admin, req)
+	resp := dispatchCommand(adminSrv, req)
 	writeResp(conn, resp)
 }
 
-func dispatchCommand(admin *AdminServer, req Request) Response {
+func dispatchCommand(adminSrv *admin.Server, req Request) Response {
 	switch req.Cmd {
 	case "add":
-		routes, err := admin.Add(req.Host, req.Target)
+		routes, err := adminSrv.Add(req.Host, req.Target)
 		if err != nil {
 			return Response{OK: false, Error: err.Error()}
 		}
 		return Response{OK: true, Routes: routes}
 	case "rm":
-		routes, err := admin.Remove(req.Host)
+		routes, err := adminSrv.Remove(req.Host)
 		if err != nil {
 			return Response{OK: false, Error: err.Error()}
 		}
 		return Response{OK: true, Routes: routes}
 	case "ls":
-		return Response{OK: true, Routes: admin.List()}
+		return Response{OK: true, Routes: adminSrv.List()}
 	case "reload":
-		routes, err := admin.Reload()
+		routes, err := adminSrv.Reload()
 		if err != nil {
 			return Response{OK: false, Error: err.Error()}
 		}

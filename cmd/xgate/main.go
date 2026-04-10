@@ -9,6 +9,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"xgate/internal/admin"
+	"xgate/internal/cli"
+	"xgate/internal/config"
+	"xgate/internal/hosts"
+	"xgate/internal/router"
+	"xgate/internal/socket"
 )
 
 const (
@@ -20,7 +27,7 @@ func main() {
 	configPath, socketPath, rest := parseGlobalFlags(os.Args[1:])
 
 	if len(rest) == 0 {
-		fmt.Print(usageText)
+		fmt.Print(cli.Usage)
 		return
 	}
 
@@ -31,7 +38,7 @@ func main() {
 		return
 	}
 
-	os.Exit(runCLI(rest, configPath, socketPath))
+	os.Exit(cli.Run(rest, configPath, socketPath))
 }
 
 // parseGlobalFlags extracts --config and --socket from anywhere in args.
@@ -73,35 +80,35 @@ func parseGlobalFlags(args []string) (configPath, socketPath string, rest []stri
 }
 
 func runDaemon(configPath, socketPath string) error {
-	if err := ensureConfig(configPath); err != nil {
+	if err := config.Ensure(configPath); err != nil {
 		return fmt.Errorf("ensure config: %w", err)
 	}
 
-	cfg, err := loadConfig(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
 
-	router, err := NewRouter(cfg.Routes)
+	r, err := router.New(cfg.Routes)
 	if err != nil {
 		return err
 	}
-	handler := NewRouterHandler(router)
+	handler := router.NewHandler(r)
 
 	if cfg.ManageHosts {
-		if err := addHostsEntries(cfg.Routes); err != nil {
+		if err := hosts.Add(cfg.Routes); err != nil {
 			log.Printf("WARNING: could not update /etc/hosts: %v (are you root?)", err)
 		}
 		// Ensure the managed /etc/hosts block is removed on every exit path,
 		// including unexpected HTTP server errors — not just clean signals.
 		defer func() {
-			if err := removeHostsEntries(); err != nil {
+			if err := hosts.Remove(); err != nil {
 				log.Printf("WARNING: could not clean /etc/hosts: %v", err)
 			}
 		}()
 	}
 
-	admin := NewAdminServer(configPath, cfg, handler)
+	adminSrv := admin.NewServer(configPath, cfg, handler)
 
 	server := &http.Server{
 		Addr:         cfg.Listen,
@@ -116,14 +123,14 @@ func runDaemon(configPath, socketPath string) error {
 
 	socketDone := make(chan error, 1)
 	go func() {
-		socketDone <- ServeSocket(ctx, socketPath, admin)
+		socketDone <- socket.Serve(ctx, socketPath, adminSrv)
 	}()
 
 	httpDone := make(chan error, 1)
 	go func() {
 		log.Printf("xgate listening on %s", cfg.Listen)
-		for _, r := range cfg.Routes {
-			log.Printf("  %s -> %s", r.Host, r.Target)
+		for _, route := range cfg.Routes {
+			log.Printf("  %s -> %s", route.Host, route.Target)
 		}
 		err := server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {

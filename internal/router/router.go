@@ -1,4 +1,4 @@
-package main
+package router
 
 import (
 	"fmt"
@@ -10,10 +10,12 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+
+	"xgate/internal/config"
 )
 
 // Router matches incoming Host header to configured routes. Immutable after
-// construction; swap a whole new one via RouterHandler to change routes.
+// construction; swap a whole new one via Handler to change routes.
 type Router struct {
 	entries []routeEntry
 }
@@ -25,10 +27,10 @@ type routeEntry struct {
 	proxy      *httputil.ReverseProxy
 }
 
-// NewRouter builds a Router from a list of routes. Returns an error if any
+// New builds a Router from a list of routes. Returns an error if any
 // target URL fails to parse — callers that need a non-fatal check (hot
 // reload) must handle this.
-func NewRouter(routes []Route) (*Router, error) {
+func New(routes []config.Route) (*Router, error) {
 	r := &Router{}
 	for _, route := range routes {
 		target, err := url.Parse(route.Target)
@@ -64,6 +66,12 @@ func NewRouter(routes []Route) (*Router, error) {
 	return r, nil
 }
 
+// Len returns the number of routes in the router. Primarily for test
+// assertions that want to verify a hot-reload swap took effect.
+func (r *Router) Len() int {
+	return len(r.entries)
+}
+
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -86,27 +94,31 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, fmt.Sprintf("no route for host: %s", host), http.StatusBadGateway)
 }
 
-// RouterHandler is a thin http.Handler that delegates to a *Router held in
+// Handler is a thin http.Handler that delegates to a *Router held in
 // an atomic pointer, so the routing table can be swapped live without
 // restarting the HTTP server.
-type RouterHandler struct {
+type Handler struct {
 	ptr atomic.Pointer[Router]
 }
 
-func NewRouterHandler(initial *Router) *RouterHandler {
-	h := &RouterHandler{}
+// NewHandler wraps the initial router in a live-swappable handler.
+func NewHandler(initial *Router) *Handler {
+	h := &Handler{}
 	h.ptr.Store(initial)
 	return h
 }
 
-func (h *RouterHandler) Store(r *Router) {
+// Store atomically replaces the underlying router. In-flight requests
+// continue using the old router; new requests see the new one.
+func (h *Handler) Store(r *Router) {
 	h.ptr.Store(r)
 }
 
-func (h *RouterHandler) Load() *Router {
+// Load returns the current underlying router without copying.
+func (h *Handler) Load() *Router {
 	return h.ptr.Load()
 }
 
-func (h *RouterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.ptr.Load().ServeHTTP(w, r)
 }

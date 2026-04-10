@@ -1,12 +1,14 @@
-package main
+package cli
 
 import (
 	"strings"
 	"testing"
+
+	"xgate/internal/config"
 )
 
 func TestFormatRoutes(t *testing.T) {
-	out := formatRoutes([]Route{
+	out := formatRoutes([]config.Route{
 		{Host: "gateway.localhost", Target: "http://localhost:8081"},
 		{Host: "*.app.localhost", Target: "http://localhost:5173"},
 	})

@@ -1,7 +1,7 @@
 .PHONY: build run stop clean test
 
 build:
-	go build -o xgate .
+	go build -o xgate ./cmd/xgate
 
 run: build
 	sudo ./xgate serve

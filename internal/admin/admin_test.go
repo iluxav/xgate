@@ -1,30 +1,33 @@
-package main
+package admin
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"xgate/internal/config"
+	"xgate/internal/router"
 )
 
-func newTestAdmin(t *testing.T) (*AdminServer, string) {
+func newTestAdmin(t *testing.T) (*Server, string) {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	cfg := &Config{
+	cfg := &config.Config{
 		Listen:      ":80",
 		ManageHosts: false, // keep /etc/hosts untouched
-		Routes:      []Route{},
+		Routes:      []config.Route{},
 	}
-	if err := writeConfig(path, cfg); err != nil {
+	if err := config.Write(path, cfg); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
-	router, err := NewRouter(cfg.Routes)
+	r, err := router.New(cfg.Routes)
 	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
+		t.Fatalf("router.New: %v", err)
 	}
-	handler := NewRouterHandler(router)
-	admin := NewAdminServer(path, cfg, handler)
+	handler := router.NewHandler(r)
+	admin := NewServer(path, cfg, handler)
 	return admin, path
 }
 
@@ -37,16 +40,16 @@ func TestAdmin_Add(t *testing.T) {
 	if len(routes) != 1 || routes[0].Host != "gateway.localhost" {
 		t.Fatalf("routes = %+v", routes)
 	}
-	onDisk, err := loadConfig(path)
+	onDisk, err := config.Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig: %v", err)
+		t.Fatalf("config.Load: %v", err)
 	}
 	if len(onDisk.Routes) != 1 {
 		t.Fatalf("onDisk.Routes = %+v", onDisk.Routes)
 	}
-	loaded := admin.handler.Load()
-	if len(loaded.entries) != 1 {
-		t.Fatalf("router entries = %d", len(loaded.entries))
+	// Verify the live router was swapped to reflect the new route count.
+	if n := admin.Handler().Load().Len(); n != 1 {
+		t.Fatalf("router Len = %d, want 1", n)
 	}
 }
 
@@ -90,7 +93,7 @@ func TestAdmin_Remove(t *testing.T) {
 	if len(routes) != 1 || routes[0].Host != "b.localhost" {
 		t.Fatalf("routes = %+v", routes)
 	}
-	onDisk, err := loadConfig(path)
+	onDisk, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,14 +123,14 @@ func TestAdmin_List(t *testing.T) {
 
 func TestAdmin_Reload(t *testing.T) {
 	admin, path := newTestAdmin(t)
-	edited := &Config{
+	edited := &config.Config{
 		Listen:      ":80",
 		ManageHosts: false,
-		Routes: []Route{
+		Routes: []config.Route{
 			{Host: "fresh.localhost", Target: "http://localhost:9"},
 		},
 	}
-	if err := writeConfig(path, edited); err != nil {
+	if err := config.Write(path, edited); err != nil {
 		t.Fatal(err)
 	}
 	if len(admin.List()) != 0 {

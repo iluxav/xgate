@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestWriteConfig_AtomicRoundTrip(t *testing.T) {
+func TestWrite_AtomicRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
@@ -19,8 +19,8 @@ func TestWriteConfig_AtomicRoundTrip(t *testing.T) {
 		},
 	}
 
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatalf("writeConfig: %v", err)
+	if err := Write(path, cfg); err != nil {
+		t.Fatalf("Write: %v", err)
 	}
 
 	info, err := os.Stat(path)
@@ -31,9 +31,9 @@ func TestWriteConfig_AtomicRoundTrip(t *testing.T) {
 		t.Fatalf("mode = %v, want 0644", mode)
 	}
 
-	got, err := loadConfig(path)
+	got, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if got.Listen != cfg.Listen || got.ManageHosts != cfg.ManageHosts {
 		t.Fatalf("top-level mismatch: %+v", got)
@@ -43,13 +43,13 @@ func TestWriteConfig_AtomicRoundTrip(t *testing.T) {
 	}
 }
 
-func TestWriteConfig_LeavesNoTempfile(t *testing.T) {
+func TestWrite_LeavesNoTempfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	cfg := &Config{Listen: ":80"}
 
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatalf("writeConfig: %v", err)
+	if err := Write(path, cfg); err != nil {
+		t.Fatalf("Write: %v", err)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -61,17 +61,17 @@ func TestWriteConfig_LeavesNoTempfile(t *testing.T) {
 	}
 }
 
-func TestEnsureConfig_CreatesDefaultWhenMissing(t *testing.T) {
+func TestEnsure_CreatesDefaultWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sub", "config.yaml")
 
-	if err := ensureConfig(path); err != nil {
-		t.Fatalf("ensureConfig: %v", err)
+	if err := Ensure(path); err != nil {
+		t.Fatalf("Ensure: %v", err)
 	}
 
-	cfg, err := loadConfig(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if cfg.Listen != ":80" {
 		t.Fatalf("Listen = %q, want :80", cfg.Listen)
@@ -84,7 +84,7 @@ func TestEnsureConfig_CreatesDefaultWhenMissing(t *testing.T) {
 	}
 }
 
-func TestEnsureConfig_LeavesExistingFile(t *testing.T) {
+func TestEnsure_LeavesExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
@@ -93,8 +93,8 @@ func TestEnsureConfig_LeavesExistingFile(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if err := ensureConfig(path); err != nil {
-		t.Fatalf("ensureConfig: %v", err)
+	if err := Ensure(path); err != nil {
+		t.Fatalf("Ensure: %v", err)
 	}
 
 	got, err := os.ReadFile(path)

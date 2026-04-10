@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"bufio"
@@ -8,26 +8,30 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"xgate/internal/admin"
+	"xgate/internal/config"
+	"xgate/internal/router"
 )
 
-func startTestSocketServer(t *testing.T) (string, *AdminServer, context.CancelFunc) {
+func startTestSocketServer(t *testing.T) (string, *admin.Server) {
 	t.Helper()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	sockPath := filepath.Join(dir, "xgate.sock")
 
-	cfg := &Config{Listen: ":80", ManageHosts: false, Routes: []Route{}}
-	if err := writeConfig(cfgPath, cfg); err != nil {
+	cfg := &config.Config{Listen: ":80", ManageHosts: false, Routes: []config.Route{}}
+	if err := config.Write(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	router, _ := NewRouter(cfg.Routes)
-	handler := NewRouterHandler(router)
-	admin := NewAdminServer(cfgPath, cfg, handler)
+	r, _ := router.New(cfg.Routes)
+	handler := router.NewHandler(r)
+	adminSrv := admin.NewServer(cfgPath, cfg, handler)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan error, 1)
 	go func() {
-		ready <- ServeSocket(ctx, sockPath, admin)
+		ready <- Serve(ctx, sockPath, adminSrv)
 	}()
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -47,7 +51,7 @@ func startTestSocketServer(t *testing.T) (string, *AdminServer, context.CancelFu
 			t.Error("socket server did not shut down")
 		}
 	})
-	return sockPath, admin, cancel
+	return sockPath, adminSrv
 }
 
 func sendSocketCmd(t *testing.T, sockPath string, req map[string]any) map[string]any {
@@ -69,7 +73,7 @@ func sendSocketCmd(t *testing.T, sockPath string, req map[string]any) map[string
 }
 
 func TestSocket_AddListRemove(t *testing.T) {
-	sockPath, _, _ := startTestSocketServer(t)
+	sockPath, _ := startTestSocketServer(t)
 
 	resp := sendSocketCmd(t, sockPath, map[string]any{
 		"cmd":    "add",
@@ -105,7 +109,7 @@ func TestSocket_AddListRemove(t *testing.T) {
 }
 
 func TestSocket_AddError(t *testing.T) {
-	sockPath, _, _ := startTestSocketServer(t)
+	sockPath, _ := startTestSocketServer(t)
 	resp := sendSocketCmd(t, sockPath, map[string]any{
 		"cmd":    "add",
 		"host":   "",
@@ -120,7 +124,7 @@ func TestSocket_AddError(t *testing.T) {
 }
 
 func TestSocket_UnknownCommand(t *testing.T) {
-	sockPath, _, _ := startTestSocketServer(t)
+	sockPath, _ := startTestSocketServer(t)
 	resp := sendSocketCmd(t, sockPath, map[string]any{"cmd": "wat"})
 	if ok, _ := resp["ok"].(bool); ok {
 		t.Fatalf("expected error, got %+v", resp)

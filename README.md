@@ -22,7 +22,7 @@ That's it. `http://api.localhost` now proxies to `localhost:8081`.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/iluxav/xgate/main/install.sh | sudo bash
 ```
 
 The installer:
@@ -40,13 +40,13 @@ After install, `xgate` is running on port 80 with an empty route table.
 ### Pin a specific version
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo XGATE_VERSION=v0.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/iluxav/xgate/main/install.sh | sudo XGATE_VERSION=v0.1.0 bash
 ```
 
 ### Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/uninstall.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/iluxav/xgate/main/uninstall.sh | sudo bash
 ```
 
 This stops and removes the service and the binary. Your `/etc/xgate/` directory is left in place so your routes aren't silently destroyed — remove it manually with `sudo rm -rf /etc/xgate` if you're done for good.
@@ -56,8 +56,8 @@ This stops and removes the service and the binary. Your `/etc/xgate/` directory 
 Requires Go 1.25+.
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
-cd REPO
+git clone https://github.com/iluxav/xgate.git
+cd xgate
 make build
 sudo ./xgate serve
 ```

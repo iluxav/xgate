@@ -1,35 +1,47 @@
-package main
+package admin
 
 import (
 	"fmt"
 	"net/url"
 	"strings"
 	"sync"
+
+	"xgate/internal/config"
+	"xgate/internal/hosts"
+	"xgate/internal/router"
 )
 
-// AdminServer owns the live config + router state and serializes mutations.
+// Server owns the live config + router state and serializes mutations.
 // All exported methods are safe for concurrent use. Mutating methods hold
 // the mutex for the full duration of the operation (validate + rewrite
 // config.yaml + rewrite /etc/hosts + swap router pointer).
-type AdminServer struct {
+type Server struct {
 	mu         sync.Mutex
 	configPath string
-	cfg        *Config
-	handler    *RouterHandler
+	cfg        *config.Config
+	handler    *router.Handler
 }
 
-func NewAdminServer(configPath string, cfg *Config, handler *RouterHandler) *AdminServer {
-	return &AdminServer{
+// NewServer constructs an admin server. The caller owns cfg and handler
+// and must not mutate them after passing them in.
+func NewServer(configPath string, cfg *config.Config, handler *router.Handler) *Server {
+	return &Server{
 		configPath: configPath,
 		cfg:        cfg,
 		handler:    handler,
 	}
 }
 
+// Handler returns the underlying RouterHandler. Used by tests that want to
+// verify the live router was swapped after a mutation.
+func (a *Server) Handler() *router.Handler {
+	return a.handler
+}
+
 // Add appends a new route, persists config, updates /etc/hosts (if
 // manage_hosts), and swaps the live router. Returns the full routes slice
 // after the mutation.
-func (a *AdminServer) Add(host, target string) ([]Route, error) {
+func (a *Server) Add(host, target string) ([]config.Route, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -47,15 +59,15 @@ func (a *AdminServer) Add(host, target string) ([]Route, error) {
 		}
 	}
 
-	newRoutes := append([]Route{}, a.cfg.Routes...)
-	newRoutes = append(newRoutes, Route{Host: host, Target: target})
+	newRoutes := append([]config.Route{}, a.cfg.Routes...)
+	newRoutes = append(newRoutes, config.Route{Host: host, Target: target})
 
 	return a.commit(newRoutes)
 }
 
 // Remove deletes the route with the given host. Returns the full routes
 // slice after the mutation.
-func (a *AdminServer) Remove(host string) ([]Route, error) {
+func (a *Server) Remove(host string) ([]config.Route, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -70,7 +82,7 @@ func (a *AdminServer) Remove(host string) ([]Route, error) {
 		return nil, fmt.Errorf("no such route: %s", host)
 	}
 
-	newRoutes := make([]Route, 0, len(a.cfg.Routes)-1)
+	newRoutes := make([]config.Route, 0, len(a.cfg.Routes)-1)
 	newRoutes = append(newRoutes, a.cfg.Routes[:idx]...)
 	newRoutes = append(newRoutes, a.cfg.Routes[idx+1:]...)
 
@@ -78,38 +90,38 @@ func (a *AdminServer) Remove(host string) ([]Route, error) {
 }
 
 // List returns a copy of the current routes.
-func (a *AdminServer) List() []Route {
+func (a *Server) List() []config.Route {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	out := make([]Route, len(a.cfg.Routes))
+	out := make([]config.Route, len(a.cfg.Routes))
 	copy(out, a.cfg.Routes)
 	return out
 }
 
 // Reload re-reads config.yaml from disk and rebuilds the router. Useful
 // after hand-editing the file.
-func (a *AdminServer) Reload() ([]Route, error) {
+func (a *Server) Reload() ([]config.Route, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	loaded, err := loadConfig(a.configPath)
+	loaded, err := config.Load(a.configPath)
 	if err != nil {
 		return nil, fmt.Errorf("reload: %w", err)
 	}
 
-	newRouter, err := NewRouter(loaded.Routes)
+	newRouter, err := router.New(loaded.Routes)
 	if err != nil {
 		return nil, fmt.Errorf("reload: %w", err)
 	}
 	if loaded.ManageHosts {
-		if err := addHostsEntries(loaded.Routes); err != nil {
+		if err := hosts.Add(loaded.Routes); err != nil {
 			return nil, fmt.Errorf("reload: %w", err)
 		}
 	}
 	a.handler.Store(newRouter)
 	a.cfg = loaded
 
-	out := make([]Route, len(loaded.Routes))
+	out := make([]config.Route, len(loaded.Routes))
 	copy(out, loaded.Routes)
 	return out, nil
 }
@@ -118,24 +130,24 @@ func (a *AdminServer) Reload() ([]Route, error) {
 // and newRoutes has already been validated. It builds the new router in
 // memory, writes config.yaml, rewrites /etc/hosts, then swaps the router
 // pointer. On any error, in-memory state is untouched.
-func (a *AdminServer) commit(newRoutes []Route) ([]Route, error) {
-	newRouter, err := NewRouter(newRoutes)
+func (a *Server) commit(newRoutes []config.Route) ([]config.Route, error) {
+	newRouter, err := router.New(newRoutes)
 	if err != nil {
 		return nil, err
 	}
 
-	newCfg := &Config{
+	newCfg := &config.Config{
 		Listen:      a.cfg.Listen,
 		ManageHosts: a.cfg.ManageHosts,
 		Routes:      newRoutes,
 	}
 
-	if err := writeConfig(a.configPath, newCfg); err != nil {
+	if err := config.Write(a.configPath, newCfg); err != nil {
 		return nil, err
 	}
 
 	if a.cfg.ManageHosts {
-		if err := addHostsEntries(newRoutes); err != nil {
+		if err := hosts.Add(newRoutes); err != nil {
 			return nil, fmt.Errorf("update /etc/hosts: %w", err)
 		}
 	}
@@ -143,7 +155,7 @@ func (a *AdminServer) commit(newRoutes []Route) ([]Route, error) {
 	a.handler.Store(newRouter)
 	a.cfg = newCfg
 
-	out := make([]Route, len(newRoutes))
+	out := make([]config.Route, len(newRoutes))
 	copy(out, newRoutes)
 	return out, nil
 }

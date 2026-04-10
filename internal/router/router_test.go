@@ -1,4 +1,4 @@
-package main
+package router
 
 import (
 	"fmt"
@@ -8,26 +8,31 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"xgate/internal/config"
 )
 
-func TestNewRouter_InvalidTargetReturnsError(t *testing.T) {
-	_, err := NewRouter([]Route{{Host: "a", Target: "://bad"}})
+func TestNew_InvalidTargetReturnsError(t *testing.T) {
+	_, err := New([]config.Route{{Host: "a", Target: "://bad"}})
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
 	}
 }
 
-func TestNewRouter_Valid(t *testing.T) {
-	r, err := NewRouter([]Route{{Host: "a", Target: "http://127.0.0.1:9"}})
+func TestNew_Valid(t *testing.T) {
+	r, err := New([]config.Route{{Host: "a", Target: "http://127.0.0.1:9"}})
 	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	if r == nil {
 		t.Fatal("nil router")
 	}
+	if r.Len() != 1 {
+		t.Fatalf("Len = %d, want 1", r.Len())
+	}
 }
 
-func TestRouterHandler_SwapIsAtomic(t *testing.T) {
+func TestHandler_SwapIsAtomic(t *testing.T) {
 	// Two upstreams so we can tell which router was serving after the swap.
 	var aHits, bHits atomic.Int64
 	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,16 +46,16 @@ func TestRouterHandler_SwapIsAtomic(t *testing.T) {
 	}))
 	defer upstreamB.Close()
 
-	routerA, err := NewRouter([]Route{{Host: "h.localhost", Target: upstreamA.URL}})
+	routerA, err := New([]config.Route{{Host: "h.localhost", Target: upstreamA.URL}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	routerB, err := NewRouter([]Route{{Host: "h.localhost", Target: upstreamB.URL}})
+	routerB, err := New([]config.Route{{Host: "h.localhost", Target: upstreamB.URL}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	h := NewRouterHandler(routerA)
+	h := NewHandler(routerA)
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 

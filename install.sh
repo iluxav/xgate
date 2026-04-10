@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # xgate installer — downloads the latest release binary, sets up a service.
-# Run as: curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo bash
+# Run as: curl -fsSL https://raw.githubusercontent.com/iluxav/xgate/main/install.sh | sudo bash
 set -euo pipefail
 
-# --- USER-EDITABLE ------------------------------------------------------------
-REPO="OWNER/REPO"   # TODO: replace with your GitHub owner/repo before publishing
-# -----------------------------------------------------------------------------
+REPO="iluxav/xgate"
 
 BIN_PATH="/usr/local/bin/xgate"
 CONFIG_DIR="/etc/xgate"
